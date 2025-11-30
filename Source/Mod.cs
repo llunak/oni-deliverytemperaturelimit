@@ -14,6 +14,7 @@ namespace DeliveryTemperatureLimit
             new POptions().RegisterOptions( this, typeof( Options ));
             ClearableManager_Patch.Patch( harmony );
             FetchManager_PickupComparerIncludingPriority_Patch.Patch( harmony );
+            FetchAreaChore_StatesInstance_Begin_Delegate_Patch.Patch( harmony );
         }
         public override void OnAllModsLoaded(Harmony harmony, IReadOnlyList<KMod.Mod> mods)
         {

@@ -68,13 +68,26 @@ namespace DeliveryTemperatureLimit
         private static Dictionary< int, AmountByTagIndexDict > worldAmounts = new Dictionary< int, AmountByTagIndexDict >();
 
         // Game's FetchListStatusItemUpdater.Render200ms().
-        public static IEnumerable<CodeInstruction> Render200ms(IEnumerable<CodeInstruction> instructions)
+        public static IEnumerable<CodeInstruction> Render200ms(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
             var codes = new List<CodeInstruction>(instructions);
             bool found = false;
+            LocalBuilder worldContainer = null;
             for( int i = 0; i < codes.Count; ++i )
             {
                 // Debug.Log("T:" + i + ":" + codes[i].opcode + "::" + (codes[i].operand != null ? codes[i].operand.ToString() : codes[i].operand));
+                // The function has code:
+                // int id = worldContainer.id;
+                // Here 'worldContainer' is actually only a temporary variable on the IL stack, so prepend storing it:
+                // WorldContainer worldContainer = worldContainer;
+                if( codes[ i ].opcode == OpCodes.Call && codes[ i ].operand.ToString() == "WorldContainer get_Current()"
+                    && i + 1 < codes.Count
+                    && codes[ i + 1 ].opcode == OpCodes.Ldfld && codes[ i + 1 ].operand.ToString() == "System.Int32 id" )
+                {
+                    codes.Insert( i + 1, new CodeInstruction( OpCodes.Dup ));
+                    worldContainer = generator.DeclareLocal( typeof( WorldContainer ));
+                    codes.Insert( i + 2, new CodeInstruction( OpCodes.Stloc_S, worldContainer.LocalIndex )); // store 'worldContainer'
+                }
                 // The function has code:
                 // float minimumAmount = item8.GetMinimumAmount(key);
                 // Append:
@@ -89,7 +102,7 @@ namespace DeliveryTemperatureLimit
                     codes.Insert( i + 2, new CodeInstruction( OpCodes.Dup )); // load 'num3', the code leaves it on the stack
                     codes.Insert( i + 3, new CodeInstruction( OpCodes.Ldloca_S, 37 )); // ref 'num6'
                     codes.Insert( i + 4, new CodeInstruction( OpCodes.Ldloc_S, 28 )); // 'item8'
-                    codes.Insert( i + 5, new CodeInstruction( OpCodes.Ldloc_0 )); // 'worldContainer' (enumerator)
+                    codes.Insert( i + 5, new CodeInstruction( OpCodes.Ldloc_S, worldContainer.LocalIndex )); // load 'worldContainer'
                     codes.Insert( i + 6, new CodeInstruction( OpCodes.Ldloc_S, 33 )); // 'key'
                     codes.Insert( i + 7, new CodeInstruction( OpCodes.Ldloc_S, 34 )); // 'value2'
                     codes.Insert( i + 8, new CodeInstruction( OpCodes.Ldloc_S, 38 )); // 'minimumAmount'
@@ -105,9 +118,9 @@ namespace DeliveryTemperatureLimit
         }
 
         public static void Render200ms_Hook( float num3, ref float num6, FetchList2 item8,
-            IEnumerator< WorldContainer > worldContainer, Tag key, float value2, float minimumAmount )
+            WorldContainer worldContainer, Tag key, float value2, float minimumAmount )
         {
-            UpdateAvailable( item8, worldContainer.Current, key, ref num6, num3, value2, minimumAmount );
+            UpdateAvailable( item8, worldContainer, key, ref num6, num3, value2, minimumAmount );
         }
 
         // FastTrack's code for updating status.
@@ -203,19 +216,40 @@ namespace DeliveryTemperatureLimit
             bool found1 = false;
             bool found2 = false;
             bool found3 = false;
+            int keyIndex = -1;
+            int num2Index = -1;
             for( int i = 0; i < codes.Count; ++i )
             {
                 // Debug.Log("T:" + i + ":" + codes[i].opcode + "::" + (codes[i].operand != null ? codes[i].operand.ToString() : codes[i].operand));
+                // Get location of 'num2'.
+                // int num2 = worldId;
+                if( num2Index == -1
+                    && codes[ i ].opcode == OpCodes.Call && codes[ i ].operand.ToString() == "Int32 get_worldId()"
+                    && i + 1 < codes.Count
+                    && codes[ i + 1 ].IsStloc())
+                {
+                    num2Index = codes[ i + 1 ].LocalIndex();
+                }
+                // Get location of 'key'.
+                // Tag key = current.Key;
+                if( keyIndex == -1
+                    && codes[ i ].opcode == OpCodes.Call && codes[ i ].operand.ToString() == "Tag get_Key()"
+                    && i + 1 < codes.Count
+                    && codes[ i + 1 ].IsStloc())
+                {
+                    keyIndex = codes[ i + 1 ].LocalIndex();
+                }
                 // The function has code:
                 // num3 = 0;
                 // Append:
                 // WorldInventoryUpdate_Hook1( num2, key );
-                if( codes[ i ].opcode == OpCodes.Ldc_R4 && codes[ i ].operand.ToString() == "0"
+                if( keyIndex != -1 && num2Index != -1
+                    && codes[ i ].opcode == OpCodes.Ldc_R4 && codes[ i ].operand.ToString() == "0"
                     && i + 1 < codes.Count
                     && codes[ i + 1 ].opcode == OpCodes.Stloc_S && codes[ i + 1 ].operand.ToString() == "System.Single (5)" )
                 {
-                    codes.Insert( i + 2, new CodeInstruction( OpCodes.Ldloc_S, 2 )); // load 'num2'
-                    codes.Insert( i + 3, new CodeInstruction( OpCodes.Ldloc_S, 4 )); // load 'key'
+                    codes.Insert( i + 2, CodeInstruction2.LoadLocal( num2Index )); // load 'num2'
+                    codes.Insert( i + 3, CodeInstruction2.LoadLocal( keyIndex )); // load 'key'
                     codes.Insert( i + 4, new CodeInstruction( OpCodes.Call,
                         typeof( StatusItemsUpdaterPatch ).GetMethod( nameof( WorldInventoryUpdate_Hook1 ))));
                     found1 = true;
@@ -224,7 +258,7 @@ namespace DeliveryTemperatureLimit
                 // num3 += item.TotalAmount;
                 // Append:
                 // WorldInventoryUpdate_Hook2( item );
-                if( codes[ i ].opcode == OpCodes.Ldloc_S && codes[ i ].operand.ToString() == "Pickupable (7)"
+                if( codes[ i ].opcode == OpCodes.Ldloc_S && codes[ i ].operand.ToString().StartsWith( "Pickupable (" )
                     && i + 1 < codes.Count
                     && codes[ i + 1 ].opcode == OpCodes.Callvirt && codes[ i + 1 ].operand.ToString() == "Single get_TotalAmount()" )
                 {
@@ -239,8 +273,8 @@ namespace DeliveryTemperatureLimit
                 // WorldInventoryUpdate_Hook3( key, num2 );
                 if( codes[ i ].opcode == OpCodes.Ldfld && codes[ i ].operand.ToString().EndsWith( " accessibleAmounts" ))
                 {
-                    codes.Insert( i + 1, new CodeInstruction( OpCodes.Ldloc_S, 4 )); // load 'key'
-                    codes.Insert( i + 2, new CodeInstruction( OpCodes.Ldloc_2, 4 )); // load 'num2'
+                    codes.Insert( i + 1, CodeInstruction2.LoadLocal( keyIndex )); // load 'key'
+                    codes.Insert( i + 2, CodeInstruction2.LoadLocal( num2Index )); // load 'num2'
                     codes.Insert( i + 3, new CodeInstruction( OpCodes.Call,
                         typeof( StatusItemsUpdaterPatch ).GetMethod( nameof( WorldInventoryUpdate_Hook3 ))));
                     found3 = true;

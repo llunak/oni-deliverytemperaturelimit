@@ -110,37 +110,14 @@ namespace DeliveryTemperatureLimit
         public static IEnumerable<CodeInstruction> Begin(IEnumerable<CodeInstruction> instructions)
         {
             var codes = new List<CodeInstruction>(instructions);
-            bool found1 = false;
-            bool found2 = false;
-            int rootChoreLoad = -1;
+            bool found = false;
             for( int i = 0; i < codes.Count; ++i )
             {
 //                Debug.Log("T:" + i + ":" + codes[i].opcode + "::" + (codes[i].operand != null ? codes[i].operand.ToString() : codes[i].operand));
-                if( codes[ i ].opcode == OpCodes.Ldarg_0 && i + 1 < codes.Count
-                    && codes[ i + 1 ].opcode == OpCodes.Ldfld && codes[ i + 1 ].operand.ToString() == "FetchChore rootChore" )
-                {
-                    rootChoreLoad = i;
-                }
                 // The function has code:
-                // if (... && rootContext.consumerState.consumer.CanReach(pickupable2))
+                // if (... && fetchChore3.forbidHash == rootChore.forbidHash)
                 // Add:
-                // if (... && Begin_Hook1( rootChore, pickupable2 ))
-                if( rootChoreLoad != -1 && codes[ i ].opcode == OpCodes.Ldloc_S && i + 2 < codes.Count
-                    && codes[ i + 1 ].opcode == OpCodes.Callvirt && codes[ i + 1 ].operand.ToString() == "Boolean CanReach(IApproachable)"
-                    && codes[ i + 2 ].opcode == OpCodes.Brfalse_S )
-                {
-                    codes.Insert( i + 3, codes[ rootChoreLoad ].Clone());
-                    codes.Insert( i + 4, codes[ rootChoreLoad + 1 ].Clone()); // load 'rootChore'
-                    codes.Insert( i + 5, codes[ i ].Clone()); // load 'pickupable2'
-                    codes.Insert( i + 6, new CodeInstruction( OpCodes.Call,
-                        typeof( FetchAreaChore_StatesInstance_Patch ).GetMethod( nameof( Begin_Hook1 ))));
-                    codes.Insert( i + 7, codes[ i + 2 ].Clone()); // if false
-                    found1 = true;
-                }
-                // The function has code:
-                // if (... && fetchChore2.forbidHash == rootChore.forbidHash)
-                // Add:
-                // if (... && Begin_Hook2( rootChore, fetchChore2 ))
+                // if (... && Begin_Hook( rootChore, fetchChore3 ))
                 if( codes[ i ].opcode == OpCodes.Brfalse_S && i + 6 < codes.Count
                     && codes[ i + 1 ].opcode == OpCodes.Ldloc_S && codes[ i + 1 ].operand.ToString().StartsWith( "FetchChore" )
                     && codes[ i + 2 ].opcode == OpCodes.Ldfld && codes[ i + 2 ].operand.ToString() == "System.Int32 forbidHash"
@@ -151,27 +128,20 @@ namespace DeliveryTemperatureLimit
                 {
                     codes.Insert( i + 7, codes[ i + 3 ].Clone());
                     codes.Insert( i + 8, codes[ i + 4 ].Clone()); // load 'rootChore'
-                    codes.Insert( i + 9, codes[ i + 1 ].Clone()); // load 'fetchChore2'
+                    codes.Insert( i + 9, codes[ i + 1 ].Clone()); // load 'fetchChore3'
                     codes.Insert( i + 10, new CodeInstruction( OpCodes.Call,
-                        typeof( FetchAreaChore_StatesInstance_Patch ).GetMethod( nameof( Begin_Hook2 ))));
+                        typeof( FetchAreaChore_StatesInstance_Patch ).GetMethod( nameof( Begin_Hook ))));
                     codes.Insert( i + 11, codes[ i ].Clone()); // if false
-                    found2 = true;
+                    found = true;
+                    break;
                 }
             }
-            if(!found1 || !found2)
+            if(!found)
                 Debug.LogWarning("DeliveryTemperatureLimit: Failed to patch FetchAreaChore.StatesInstance.Begin()");
             return codes;
         }
 
-        public static bool Begin_Hook1( FetchChore rootChore, Pickupable pickupable2 )
-        {
-            TemperatureLimit limit = TemperatureLimit.Get( rootChore.destination?.gameObject );
-            if( limit == null || limit.IsDisabled() || pickupable2.PrimaryElement == null )
-                return true;
-            return limit.AllowedByTemperature( pickupable2.PrimaryElement.Temperature );
-        }
-
-        public static bool Begin_Hook2( FetchChore rootChore, FetchChore fetchChore2 )
+        public static bool Begin_Hook( FetchChore rootChore, FetchChore fetchChore2 )
         {
             // This checks whether the second chore can be handled as a part of the root chore.
             // Therefore add a check if the second chore's range is compatible.
@@ -182,6 +152,68 @@ namespace DeliveryTemperatureLimit
             if( limit == null )
                 return false; // by now limit2 is a valid range
             return limit2.LowLimit >= limit.LowLimit && limit2.HighLimit <= limit.HighLimit;
+        }
+    }
+
+    // Delegate called from FetchAreaChore.StatesInstance.Begin().
+    public static class FetchAreaChore_StatesInstance_Begin_Delegate_Patch
+    {
+        public static void Patch( Harmony harmony )
+        {
+            MethodInfo info = AccessTools.Method( typeof( KMod.Mod ).Assembly.GetType(
+                "FetchAreaChore/StatesInstance/<>c__DisplayClass17_0" ), "<Begin>b__0" );
+            if( info != null )
+                harmony.Patch( info, transpiler: new HarmonyMethod(
+                    typeof( FetchAreaChore_StatesInstance_Begin_Delegate_Patch ).GetMethod( nameof( Delegate ))));
+            else
+                Debug.LogError( "DeliveryTemperatureLimit: Failed to find"
+                    + " FetchAreaChore.StatesInstance.Begin() delegate for patching" );
+        }
+
+        public static IEnumerable<CodeInstruction> Delegate(IEnumerable<CodeInstruction> instructions)
+        {
+            var codes = new List<CodeInstruction>(instructions);
+            bool found = false;
+            int rootChoreLoad = -1;
+            for( int i = 0; i < codes.Count; ++i )
+            {
+//                Debug.Log("T:" + i + ":" + codes[i].opcode + "::" + (codes[i].operand != null ? codes[i].operand.ToString() : codes[i].operand));
+                if( codes[ i ].opcode == OpCodes.Ldarg_0 && i + 2 < codes.Count
+                    && codes[ i + 1 ].opcode == OpCodes.Ldfld && codes[ i + 1 ].operand.ToString().EndsWith("this")
+                    && codes[ i + 2 ].opcode == OpCodes.Ldfld && codes[ i + 2 ].operand.ToString() == "FetchChore rootChore" )
+                {
+                    rootChoreLoad = i;
+                }
+                // The function has code:
+                // if (!rootContext.consumerState.consumer.CanReach(pickupable))
+                // Add:
+                // if (... || !Delegate_Hook( rootChore, pickupable ))
+                if( rootChoreLoad != -1 && codes[ i ].opcode == OpCodes.Ldloc_S && i + 2 < codes.Count
+                    && codes[ i + 1 ].opcode == OpCodes.Callvirt && codes[ i + 1 ].operand.ToString() == "Boolean CanReach(IApproachable)"
+                    && codes[ i + 2 ].opcode == OpCodes.Brfalse_S )
+                {
+                    codes.Insert( i + 3, codes[ rootChoreLoad ].Clone());
+                    codes.Insert( i + 4, codes[ rootChoreLoad + 1 ].Clone());
+                    codes.Insert( i + 5, codes[ rootChoreLoad + 2 ].Clone()); // load 'rootChore'
+                    codes.Insert( i + 6, codes[ i ].Clone()); // load 'pickupable'
+                    codes.Insert( i + 7, new CodeInstruction( OpCodes.Call,
+                        typeof( FetchAreaChore_StatesInstance_Patch ).GetMethod( nameof( Delegate_Hook ))));
+                    codes.Insert( i + 8, codes[ i + 2 ].Clone()); // if false
+                    found = true;
+                    break;
+                }
+            }
+            if(found)
+                Debug.LogWarning("DeliveryTemperatureLimit: Failed to patch FetchAreaChore.StatesInstance.Begin delegate()");
+            return codes;
+        }
+
+        public static bool Delegate_Hook( FetchChore rootChore, Pickupable pickupable2 )
+        {
+            TemperatureLimit limit = TemperatureLimit.Get( rootChore.destination?.gameObject );
+            if( limit == null || limit.IsDisabled() || pickupable2.PrimaryElement == null )
+                return true;
+            return limit.AllowedByTemperature( pickupable2.PrimaryElement.Temperature );
         }
     }
 
@@ -402,10 +434,10 @@ namespace DeliveryTemperatureLimit
                 // num = Compare_Hook( a, b );
                 // if (num != 0)
                 //     return num;
-                if( codes[ i ].opcode == OpCodes.Ldarga_S && codes[ i ].operand.ToString() == "2"
+                if( codes[ i ].opcode == OpCodes.Ldarga_S && codes[ i ].operand.ToString() == "1"
                     && i + 9 < codes.Count
                     && codes[ i + 1 ].opcode == OpCodes.Ldflda && codes[ i + 1 ].operand.ToString() == "System.Int32 masterPriority"
-                    && codes[ i + 2 ].opcode == OpCodes.Ldarg_1
+                    && codes[ i + 2 ].opcode == OpCodes.Ldarg_0
                     && codes[ i + 3 ].opcode == OpCodes.Ldfld && codes[ i + 3 ].operand.ToString() == "System.Int32 masterPriority"
                     && codes[ i + 4 ].opcode == OpCodes.Call && codes[ i + 4 ].operand.ToString() == "Int32 CompareTo(Int32)"
                     && CodeInstructionExtensions.IsStloc( codes[ i + 5 ] )
@@ -414,8 +446,8 @@ namespace DeliveryTemperatureLimit
                     && CodeInstructionExtensions.IsLdloc( codes[ i + 8 ] )
                     && codes[ i + 9 ].opcode == OpCodes.Ret )
                 {
-                    codes.Insert( i + 10, new CodeInstruction( OpCodes.Ldarg_1 )); // load 'a'
-                    codes.Insert( i + 11, new CodeInstruction( OpCodes.Ldarg_2 )); // load 'b'
+                    codes.Insert( i + 10, new CodeInstruction( OpCodes.Ldarg_0 )); // load 'a'
+                    codes.Insert( i + 11, new CodeInstruction( OpCodes.Ldarg_1 )); // load 'b'
                     codes.Insert( i + 12, new CodeInstruction( OpCodes.Call,
                         typeof( FetchManager_PickupComparerIncludingPriority_Patch ).GetMethod( nameof( Compare_Hook ))));
                     codes.Insert( i + 13, codes[ i + 5 ].Clone()); // stloc
@@ -440,57 +472,6 @@ namespace DeliveryTemperatureLimit
                     ? 0 : a.pickupable.PrimaryElement == null ? -1 : 1;
             return data.TemperatureIndex( a.pickupable.PrimaryElement.Temperature )
                 .CompareTo( data.TemperatureIndex( b.pickupable.PrimaryElement.Temperature ));
-        }
-
-// ONI's Harmony is too old to have LocalLocal() and StoreLocal(), so copy&paste from Harmony.
-/*
-MIT License
-
-Copyright (c) 2017 Andreas Pardeike
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
-        public static CodeInstruction LoadLocal(int index, bool useAddress = false)
-        {
-            if (useAddress)
-            {
-                if (index < 256) return new CodeInstruction(OpCodes.Ldloca_S, Convert.ToByte(index));
-                else return new CodeInstruction(OpCodes.Ldloca, index);
-            }
-            else
-            {
-                if (index == 0) return new CodeInstruction(OpCodes.Ldloc_0);
-                else if (index == 1) return new CodeInstruction(OpCodes.Ldloc_1);
-                else if (index == 2) return new CodeInstruction(OpCodes.Ldloc_2);
-                else if (index == 3) return new CodeInstruction(OpCodes.Ldloc_3);
-                else if (index < 256) return new CodeInstruction(OpCodes.Ldloc_S, Convert.ToByte(index));
-                else return new CodeInstruction(OpCodes.Ldloc, index);
-            }
-        }
-        public static CodeInstruction StoreLocal(int index)
-        {
-            if (index == 0) return new CodeInstruction(OpCodes.Stloc_0);
-            else if (index == 1) return new CodeInstruction(OpCodes.Stloc_1);
-            else if (index == 2) return new CodeInstruction(OpCodes.Stloc_2);
-            else if (index == 3) return new CodeInstruction(OpCodes.Stloc_3);
-            else if (index < 256) return new CodeInstruction(OpCodes.Stloc_S, Convert.ToByte(index));
-            else return new CodeInstruction(OpCodes.Stloc, index);
         }
     }
 }
