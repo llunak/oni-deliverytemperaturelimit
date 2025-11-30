@@ -9,8 +9,6 @@ namespace DeliveryTemperatureLimit
     [HarmonyPatch(typeof(MaterialSelectionPanel))]
     public class MaterialSelectionPanel_Patch
     {
-        private static FieldInfo sideScreenMaterialContentBodyField
-            = AccessTools.Field( typeof( DetailsScreen ), "sideScreenMaterialContentBody" );
         private static FieldInfo materialSelectionPanelField
             = AccessTools.Field( typeof( DetailsScreenMaterialPanel ), "materialSelectionPanel" );
 
@@ -29,10 +27,9 @@ namespace DeliveryTemperatureLimit
             // Ignore the change material case. It results in a deconstruct+construct combo,
             // and it'd be necessary to carry-over the temperatures, which the game can't do even
             // for settings of the building. Reconsider when that is implemented.
-            GameObject sideScreenMaterialContentBody = (GameObject) sideScreenMaterialContentBodyField
-                .GetValue( DetailsScreen.Instance );
-            DetailsScreenMaterialPanel detailsScreenMaterialPanel = sideScreenMaterialContentBody
-                .GetComponentInChildren<DetailsScreenMaterialPanel>();
+            DetailsScreenMaterialPanel detailsScreenMaterialPanel
+                = DetailsScreen.Instance.GetTabOfType(DetailsScreen.SidescreenTabTypes.Material)
+                    .bodyInstance.GetComponentInChildren<DetailsScreenMaterialPanel>();
             if( __instance == (MaterialSelectionPanel) materialSelectionPanelField.GetValue( detailsScreenMaterialPanel ))
                 return;
             // Create and set the build singleton instance, it shouldn't matter in which game object it is.
