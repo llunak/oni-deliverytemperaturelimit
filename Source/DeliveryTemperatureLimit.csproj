@@ -3,7 +3,7 @@
     <OutputPath>..\</OutputPath>
     <TargetFramework>net471</TargetFramework>
     <AssemblyTitle>Delivery Temperature Limit</AssemblyTitle>
-    <AssemblyVersion>2024.0622.1</AssemblyVersion>
+    <AssemblyVersion>2025.1130.1</AssemblyVersion>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
