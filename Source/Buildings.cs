@@ -34,13 +34,16 @@ namespace DeliveryTemperatureLimit
                typeof(SublimationStationConfig),
                typeof(LonelyMinionHouseConfig),
                typeof(ResearchCenterConfig),
+               typeof(WoodGasGeneratorConfig),
+               typeof(RustDeoxidizerConfig),
+               typeof(AlgaeDistilleryConfig),
+               typeof(MineralDeoxidizerConfig),
+               typeof(KilnConfig),
 #if false
                typeof(WaterCoolerConfig),
                typeof(JuicerConfig),
                typeof(AlgaeHabitatConfig),
-               typeof(WoodGasGeneratorConfig),
                typeof(AdvancedResearchCenterConfig),
-               typeof(RustDeoxidizerConfig),
                typeof(MechanicalSurfboardConfig),
                typeof(IceMachineConfig),
                typeof(WashBasinConfig),
@@ -48,9 +51,7 @@ namespace DeliveryTemperatureLimit
                typeof(EspressoMachineConfig),
                typeof(SodaFountainConfig),
                typeof(CompostConfig),
-               typeof(AlgaeDistilleryConfig),
                typeof(OxyliteRefineryConfig),
-               typeof(MineralDeoxidizerConfig),
                typeof(HandSanitizerConfig),
                typeof(FertilizerMakerConfig),
                typeof(DiningTableConfig),
@@ -72,7 +73,6 @@ namespace DeliveryTemperatureLimit
                typeof(SupermaterialRefineryConfig),
                typeof(MissileFabricatorConfig),
                typeof(UraniumCentrifugeConfig),
-               typeof(KilnConfig),
 #endif
             };
             foreach( Type configType in configTypes )
